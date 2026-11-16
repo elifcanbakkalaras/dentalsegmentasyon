@@ -1,0 +1,13 @@
+# Hasta verisi ve sunucu durumu asla depoya girmez
+images640/
+*.png
+*.jpg
+*.jpeg
+*.dcm
+users.json
+data/
+findings.json
+manifest*
+*.pem
+*.key
+__pycache__/

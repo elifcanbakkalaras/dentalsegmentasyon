@@ -1,0 +1,142 @@
+<!doctype html>
+<html lang="tr"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Okuyucu Değerlendirmesi</title>
+<style>
+:root{--bg:#f6f6f4;--fg:#1d1d1b;--mut:#6b6b66;--card:#fff;--line:#d9d9d4;--acc:#1f6feb;--box:#ffd400;--miss:#00e0ff}
+@media (prefers-color-scheme:dark){:root{--bg:#161615;--fg:#ececea;--mut:#a0a09a;--card:#21211f;--line:#3a3a37;--acc:#58a6ff}}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--fg);font:15px/1.45 system-ui,sans-serif}
+header{position:sticky;top:0;z-index:5;background:var(--card);border-bottom:1px solid var(--line);padding:8px 16px;display:flex;gap:12px;align-items:center;flex-wrap:wrap}
+header b{font-size:16px}button,select,input{font:inherit;padding:5px 10px;border:1px solid var(--line);border-radius:6px;background:var(--card);color:var(--fg);cursor:pointer}
+button.pri{background:var(--acc);color:#fff;border-color:var(--acc)}main{padding:12px 16px;max-width:1500px;margin:auto}
+.wrap{position:relative;width:100%;user-select:none;background:#000;cursor:crosshair;touch-action:none;-webkit-user-select:none}
+input[type=radio]{width:20px;height:20px;vertical-align:middle;margin:6px 4px}.opt label{display:inline-block;padding:2px 0}
+.wrap img{position:absolute;inset:0;width:100%;height:100%;filter:brightness(var(--br,1)) contrast(var(--ct,1))}
+.bx{position:absolute;border:2px solid var(--box);pointer-events:none}.bx span{position:absolute;top:-20px;left:-2px;background:var(--box);color:#000;font:bold 12px system-ui;padding:0 4px}
+.bx.miss{border-style:dashed;border-color:var(--miss)}.bx.miss span{background:var(--miss)}
+.hidebox .bx{display:none}
+table{border-collapse:collapse;width:100%;margin-top:10px}td,th{border-bottom:1px solid var(--line);padding:6px;text-align:left}
+.mut{color:var(--mut)}.opt label{margin-right:10px;white-space:nowrap}.done{color:#2da44e}
+</style></head><body>
+<header><b>Okuyucu değerlendirmesi</b>
+<label>Okuyucu kodu <input id="reader" size="6"></label>
+<button id="prev">◀</button><span id="pos"></span><button id="next">▶</button>
+<select id="jump"></select>
+<label>Parlaklık <input type="range" id="br" min="0.5" max="2" step="0.05" value="1"></label>
+<label>Kontrast <input type="range" id="ct" min="0.5" max="2" step="0.05" value="1"></label>
+<button id="tog">Kutuları gizle (H)</button>
+<button class="pri" id="save">Sonuçları kaydet (JSON)</button>
+<label class="mut">Yükle <input type="file" id="load" accept=".json"></label>
+<b id="srv"></b>
+</header>
+<main>
+<p class="mut">Sarı numaralı kutular yapay zekâ bulgularıdır. Her biri için doğru / yanlış / emin değilim ve güven (1 = hiç emin değilim, 5 = çok eminim) seçin.
+Kaçırılan çürük veya periapikal lezyonu işaretlemek için önce türü seçin, sonra görüntü üzerinde sürükleyerek kutu çizin (mavi kesikli). Kaydı silmek için tablodaki ✕.</p>
+<div><label>Çizilecek tür: <select id="mcls"><option>Çürük</option><option>Periapikal</option></select></label>
+<label style="margin-left:12px"><input type="checkbox" id="caseDone"> Bu hasta tamamlandı</label></div>
+<div id="wrap" class="wrap"><img id="img" alt="panoramik"></div>
+<table><thead><tr><th>#</th><th>Tür</th><th>Değerlendirme</th><th>Güven</th></tr></thead><tbody id="rows"></tbody></table>
+<table><thead><tr><th>Kaçırılan</th><th>Tür</th><th>Güven</th><th></th></tr></thead><tbody id="mrows"></tbody></table>
+</main>
+<script>
+const CASES = [{"case":"R0062","aspect":2.3644,"findings":[{"cls":"Caries","box":[0.6141,0.5438,0.65,0.6156]}]},{"case":"R0235","aspect":2.0215,"findings":[]},{"case":"R1009","aspect":2.4607,"findings":[]},{"case":"R0598","aspect":1.9896,"findings":[{"cls":"Caries","box":[0.6844,0.5922,0.7047,0.6172]},{"cls":"Caries","box":[0.3031,0.6953,0.3578,0.7656]},{"cls":"Caries","box":[0.6328,0.6797,0.6844,0.7562]}]},{"case":"R0180","aspect":2.4111,"findings":[{"cls":"Caries","box":[0.5766,0.5469,0.5938,0.6047]},{"cls":"Caries","box":[0.6344,0.625,0.6766,0.6922]},{"cls":"Periapical","box":[0.5609,0.8078,0.5812,0.8516]}]},{"case":"R0189","aspect":2.5133,"findings":[]},{"case":"R0824","aspect":2.0215,"findings":[]},{"case":"R0083","aspect":2.2719,"findings":[{"cls":"Caries","box":[0.6219,0.7328,0.6406,0.7797]},{"cls":"Caries","box":[0.3969,0.7594,0.4078,0.7812]}]},{"case":"R0626","aspect":1.9896,"findings":[{"cls":"Caries","box":[0.4062,0.6891,0.4172,0.7156]},{"cls":"Caries","box":[0.4,0.7578,0.4234,0.7938]}]},{"case":"R0695","aspect":2.3504,"findings":[{"cls":"Caries","box":[0.4094,0.5906,0.4266,0.6234]},{"cls":"Periapical","box":[0.45,0.4641,0.4688,0.4938]}]},{"case":"R0607","aspect":2.4437,"findings":[]},{"case":"R0697","aspect":2.4437,"findings":[]},{"case":"R0788","aspect":2.4437,"findings":[{"cls":"Caries","box":[0.3469,0.6078,0.3859,0.6828]}]},{"case":"R1078","aspect":2.38,"findings":[{"cls":"Caries","box":[0.4359,0.5859,0.4484,0.6234]},{"cls":"Caries","box":[0.3828,0.6016,0.3969,0.6469]},{"cls":"Periapical","box":[0.6984,0.6688,0.7094,0.6938]}]},{"case":"R1109","aspect":2.3222,"findings":[{"cls":"Caries","box":[0.6406,0.7141,0.6547,0.7469]},{"cls":"Periapical","box":[0.3266,0.8766,0.3469,0.9125]}]},{"case":"R0726","aspect":1.9593,"findings":[{"cls":"Caries","box":[0.3438,0.7938,0.3922,0.8594]}]},{"case":"R0501","aspect":2.0052,"findings":[{"cls":"Caries","box":[0.6062,0.5016,0.6312,0.5625]}]},{"case":"R0175","aspect":2.3089,"findings":[]},{"case":"R0633","aspect":2.3363,"findings":[{"cls":"Periapical","box":[0.6672,0.8188,0.6984,0.8875]},{"cls":"Periapical","box":[0.6453,0.8453,0.6641,0.8891]}]},{"case":"R1201","aspect":2.0215,"findings":[{"cls":"Caries","box":[0.6234,0.5703,0.6391,0.5859]}]},{"case":"R0818","aspect":2.4274,"findings":[]},{"case":"R1105","aspect":2.5133,"findings":[{"cls":"Caries","box":[0.2922,0.5719,0.3047,0.5953]}]},{"case":"R0093","aspect":2.2963,"findings":[{"cls":"Periapical","box":[0.6109,0.8531,0.6328,0.8891]},{"cls":"Periapical","box":[0.2594,0.8516,0.2719,0.8781]}]},{"case":"R0262","aspect":2.3948,"findings":[{"cls":"Caries","box":[0.3797,0.5734,0.3969,0.6188]},{"cls":"Caries","box":[0.2547,0.5953,0.2719,0.6469]},{"cls":"Periapical","box":[0.6484,0.4766,0.6688,0.5078]}]},{"case":"R0422","aspect":2.3363,"findings":[{"cls":"Periapical","box":[0.4312,0.4375,0.4406,0.4812]}]},{"case":"R0210","aspect":2.3948,"findings":[{"cls":"Caries","box":[0.5891,0.7234,0.6062,0.7547]}]},{"case":"R0698","aspect":2.3363,"findings":[]},{"case":"R1250","aspect":2.3222,"findings":[{"cls":"Caries","box":[0.6438,0.625,0.6766,0.6875]},{"cls":"Periapical","box":[0.6422,0.7922,0.6578,0.8125]}]},{"case":"R0868","aspect":2.5133,"findings":[]},{"case":"R0414","aspect":2.2963,"findings":[{"cls":"Periapical","box":[0.5422,0.7625,0.5578,0.8]},{"cls":"Periapical","box":[0.3672,0.8688,0.3938,0.9188]}]},{"case":"R1246","aspect":2.3363,"findings":[]},{"case":"R0008","aspect":2.4956,"findings":[{"cls":"Caries","box":[0.3109,0.5484,0.3344,0.5859]}]},{"case":"R0786","aspect":2.0889,"findings":[{"cls":"Caries","box":[0.6094,0.7453,0.6328,0.7875]},{"cls":"Caries","box":[0.3734,0.725,0.4094,0.7781]}]},{"case":"R0272","aspect":2.3363,"findings":[{"cls":"Caries","box":[0.5828,0.6922,0.5969,0.7078]}]},{"case":"R1095","aspect":2.3948,"findings":[{"cls":"Caries","box":[0.6562,0.5281,0.7047,0.6078]},{"cls":"Periapical","box":[0.6828,0.7828,0.7234,0.8188]},{"cls":"Periapical","box":[0.2891,0.7828,0.3266,0.8438]}]},{"case":"R1259","aspect":2.4778,"findings":[{"cls":"Caries","box":[0.3016,0.7812,0.3125,0.8078]}]},{"case":"R0759","aspect":2.38,"findings":[{"cls":"Caries","box":[0.3516,0.375,0.3719,0.4094]},{"cls":"Caries","box":[0.3812,0.4141,0.3922,0.4359]},{"cls":"Caries","box":[0.3469,0.4656,0.375,0.5016]},{"cls":"Caries","box":[0.6625,0.4812,0.6953,0.5297]},{"cls":"Periapical","box":[0.2672,0.55,0.2828,0.5641]}]},{"case":"R0729","aspect":2.38,"findings":[{"cls":"Caries","box":[0.3875,0.6219,0.4094,0.6844]}]},{"case":"R0242","aspect":2.38,"findings":[{"cls":"Caries","box":[0.6891,0.6109,0.7047,0.6531]},{"cls":"Periapical","box":[0.3312,0.7938,0.3562,0.8453]}]},{"case":"R0143","aspect":2.4274,"findings":[]},{"case":"R1249","aspect":2.3363,"findings":[{"cls":"Caries","box":[0.6219,0.7438,0.6484,0.7922]},{"cls":"Caries","box":[0.3406,0.7703,0.3531,0.7922]}]},{"case":"R0429","aspect":2.38,"findings":[{"cls":"Caries","box":[0.2406,0.5953,0.2594,0.6281]}]},{"case":"R0498","aspect":2.38,"findings":[]},{"case":"R0963","aspect":2.3089,"findings":[{"cls":"Caries","box":[0.325,0.7047,0.3375,0.7188]},{"cls":"Caries","box":[0.5953,0.5922,0.6125,0.6391]},{"cls":"Caries","box":[0.6297,0.6516,0.6641,0.7172]},{"cls":"Periapical","box":[0.3578,0.4969,0.3844,0.5297]},{"cls":"Periapical","box":[0.6719,0.7781,0.6953,0.8094]}]},{"case":"R0731","aspect":2.4437,"findings":[]},{"case":"R0337","aspect":2.38,"findings":[{"cls":"Caries","box":[0.6141,0.5672,0.6281,0.6109]},{"cls":"Caries","box":[0.3609,0.5734,0.3812,0.625]},{"cls":"Caries","box":[0.3812,0.5938,0.4094,0.6312]}]},{"case":"R0112","aspect":2.2837,"findings":[{"cls":"Caries","box":[0.2562,0.5312,0.2828,0.5797]},{"cls":"Caries","box":[0.5859,0.5609,0.6266,0.6188]}]},{"case":"R1222","aspect":2.4274,"findings":[{"cls":"Caries","box":[0.6375,0.5922,0.6562,0.6422]}]},{"case":"R0604","aspect":2.38,"findings":[]},{"case":"R0378","aspect":2.3948,"findings":[{"cls":"Caries","box":[0.2969,0.5906,0.3297,0.6578]},{"cls":"Periapical","box":[0.3469,0.7578,0.375,0.7938]},{"cls":"Periapical","box":[0.6984,0.7547,0.7281,0.8047]}]},{"case":"R0432","aspect":2.2963,"findings":[{"cls":"Caries","box":[0.6766,0.6016,0.7047,0.6375]},{"cls":"Caries","box":[0.425,0.6453,0.4422,0.675]}]},{"case":"R0662","aspect":2.3089,"findings":[]},{"case":"R0049","aspect":2.0378,"findings":[{"cls":"Caries","box":[0.3672,0.8219,0.3828,0.8578]}]},{"case":"R1157","aspect":2.3089,"findings":[{"cls":"Periapical","box":[0.4375,0.8141,0.4547,0.8516]}]},{"case":"R1110","aspect":2.3504,"findings":[]},{"case":"R0543","aspect":2.3363,"findings":[{"cls":"Caries","box":[0.5891,0.7875,0.6297,0.8469]}]},{"case":"R0857","aspect":2.4437,"findings":[{"cls":"Caries","box":[0.2844,0.575,0.2969,0.6125]}]},{"case":"R0994","aspect":2.38,"findings":[]},{"case":"R0502","aspect":2.2963,"findings":[{"cls":"Periapical","box":[0.7281,0.7828,0.7531,0.8188]}]},{"case":"R1049","aspect":2.38,"findings":[{"cls":"Caries","box":[0.6516,0.6141,0.6641,0.6469]},{"cls":"Caries","box":[0.3359,0.6234,0.3547,0.6609]},{"cls":"Caries","box":[0.3938,0.65,0.4062,0.6672]},{"cls":"Caries","box":[0.6328,0.7234,0.6469,0.7594]}]},{"case":"R1139","aspect":2.4607,"findings":[{"cls":"Caries","box":[0.325,0.5547,0.3438,0.5859]},{"cls":"Periapical","box":[0.7156,0.6719,0.7391,0.7031]},{"cls":"Periapical","box":[0.5641,0.7984,0.5781,0.8172]},{"cls":"Periapical","box":[0.4406,0.7859,0.4641,0.8359]}]},{"case":"R0541","aspect":2.4274,"findings":[{"cls":"Caries","box":[0.6656,0.575,0.6812,0.6125]}]},{"case":"R0754","aspect":2.4437,"findings":[]},{"case":"R0796","aspect":2.5133,"findings":[{"cls":"Caries","box":[0.5812,0.7469,0.5969,0.7844]}]},{"case":"R0763","aspect":2.2963,"findings":[{"cls":"Caries","box":[0.6359,0.625,0.6578,0.6531]}]},{"case":"R0899","aspect":2.4778,"findings":[{"cls":"Caries","box":[0.3688,0.6156,0.3812,0.6359]}]},{"case":"R1136","aspect":2.4274,"findings":[{"cls":"Caries","box":[0.3953,0.5688,0.4047,0.5969]},{"cls":"Caries","box":[0.6219,0.5625,0.6406,0.6031]},{"cls":"Periapical","box":[0.6578,0.4266,0.6922,0.4625]}]},{"case":"R0852","aspect":2.4956,"findings":[]},{"case":"R1184","aspect":2.2719,"findings":[{"cls":"Caries","box":[0.6344,0.4609,0.6531,0.5109]},{"cls":"Caries","box":[0.3469,0.4656,0.3672,0.5078]},{"cls":"Caries","box":[0.6125,0.6312,0.6266,0.6703]}]},{"case":"R0736","aspect":2.4437,"findings":[]},{"case":"R0183","aspect":2.4778,"findings":[{"cls":"Caries","box":[0.6281,0.6906,0.6406,0.7141]}]},{"case":"R0451","aspect":2.38,"findings":[{"cls":"Caries","box":[0.5266,0.5484,0.5453,0.5859]},{"cls":"Periapical","box":[0.6312,0.7969,0.6531,0.825]}]},{"case":"R1059","aspect":2.38,"findings":[{"cls":"Caries","box":[0.3625,0.6703,0.375,0.6969]},{"cls":"Periapical","box":[0.3484,0.4125,0.3719,0.4469]}]},{"case":"R0819","aspect":2.4111,"findings":[{"cls":"Caries","box":[0.3438,0.5953,0.3578,0.6203]},{"cls":"Periapical","box":[0.3297,0.8531,0.3547,0.8812]}]},{"case":"R0471","aspect":2.2837,"findings":[{"cls":"Caries","box":[0.3391,0.5641,0.3625,0.625]}]},{"case":"R0427","aspect":2.38,"findings":[{"cls":"Caries","box":[0.2719,0.5891,0.2969,0.6469]},{"cls":"Caries","box":[0.2656,0.6906,0.2859,0.7359]}]},{"case":"R0949","aspect":2.4111,"findings":[]},{"case":"R0307","aspect":2.38,"findings":[{"cls":"Caries","box":[0.3672,0.5422,0.3922,0.6047]}]},{"case":"R1011","aspect":2.38,"findings":[{"cls":"Caries","box":[0.6031,0.7422,0.6172,0.7828]}]},{"case":"R0081","aspect":2.4437,"findings":[{"cls":"Caries","box":[0.3609,0.6062,0.3781,0.6422]}]},{"case":"R0601","aspect":2.3948,"findings":[]},{"case":"R0671","aspect":2.2963,"findings":[]},{"case":"R0318","aspect":2.38,"findings":[{"cls":"Caries","box":[0.3156,0.5703,0.3469,0.6188]}]},{"case":"R0376","aspect":2.2837,"findings":[{"cls":"Caries","box":[0.7312,0.6562,0.775,0.7328]},{"cls":"Periapical","box":[0.3125,0.7688,0.3734,0.8438]}]},{"case":"R0708","aspect":2.3363,"findings":[{"cls":"Caries","box":[0.4219,0.6219,0.4297,0.6516]}]},{"case":"R0928","aspect":2.4111,"findings":[]},{"case":"R0969","aspect":1.9593,"findings":[{"cls":"Caries","box":[0.3953,0.7484,0.4109,0.7656]},{"cls":"Caries","box":[0.3453,0.6344,0.3734,0.6859]},{"cls":"Caries","box":[0.6438,0.6422,0.6703,0.7016]},{"cls":"Caries","box":[0.6078,0.7547,0.6266,0.7844]}]},{"case":"R0232","aspect":2.38,"findings":[{"cls":"Caries","box":[0.7,0.5438,0.7172,0.575]}]},{"case":"R0968","aspect":2.0052,"findings":[]},{"case":"R0941","aspect":2.4437,"findings":[{"cls":"Periapical","box":[0.3438,0.4359,0.3672,0.4578]}]},{"case":"R0113","aspect":2.2963,"findings":[]},{"case":"R0058","aspect":2.3222,"findings":[]},{"case":"R0054","aspect":2.4111,"findings":[]},{"case":"R0529","aspect":2.4274,"findings":[{"cls":"Caries","box":[0.6688,0.7141,0.6922,0.7625]},{"cls":"Caries","box":[0.3328,0.7219,0.3562,0.7547]}]},{"case":"R1242","aspect":2.38,"findings":[{"cls":"Caries","box":[0.6375,0.4844,0.6594,0.5062]},{"cls":"Caries","box":[0.7047,0.5172,0.7297,0.5703]},{"cls":"Caries","box":[0.6531,0.6172,0.6688,0.6391]},{"cls":"Caries","box":[0.2844,0.6359,0.3312,0.7125]},{"cls":"Caries","box":[0.6875,0.6375,0.7,0.6719]}]},{"case":"R1147","aspect":2.4111,"findings":[]},{"case":"R1265","aspect":2.3222,"findings":[{"cls":"Caries","box":[0.3234,0.55,0.3328,0.5703]}]},{"case":"R0205","aspect":2.4111,"findings":[]},{"case":"R0484","aspect":1.9444,"findings":[]},{"case":"R0330","aspect":2.38,"findings":[{"cls":"Caries","box":[0.6828,0.5781,0.7078,0.6422]},{"cls":"Caries","box":[0.4141,0.6328,0.4312,0.6891]},{"cls":"Periapical","box":[0.6797,0.4562,0.7141,0.5094]},{"cls":"Periapical","box":[0.2984,0.8125,0.3703,0.8891]}]},{"case":"R0621","aspect":2.4607,"findings":[]},{"case":"R0341","aspect":2.38,"findings":[]},{"case":"R0057","aspect":2.3363,"findings":[{"cls":"Caries","box":[0.3844,0.6469,0.3984,0.6828]},{"cls":"Caries","box":[0.6969,0.5938,0.7422,0.6781]},{"cls":"Periapical","box":[0.7578,0.7016,0.7797,0.7359]},{"cls":"Periapical","box":[0.6625,0.7047,0.75,0.7719]}]},{"case":"R1045","aspect":2.38,"findings":[{"cls":"Caries","box":[0.6578,0.6094,0.6703,0.6375]}]},{"case":"R0157","aspect":2.2719,"findings":[]},{"case":"R0921","aspect":2.2837,"findings":[{"cls":"Caries","box":[0.2766,0.5625,0.2922,0.6062]},{"cls":"Periapical","box":[0.2969,0.7844,0.3531,0.85]}]},{"case":"R0216","aspect":2.3948,"findings":[{"cls":"Caries","box":[0.6781,0.6531,0.6891,0.6781]},{"cls":"Caries","box":[0.6047,0.7031,0.6188,0.7266]},{"cls":"Periapical","box":[0.2984,0.8125,0.3281,0.8672]}]},{"case":"R0740","aspect":2.3363,"findings":[{"cls":"Caries","box":[0.3125,0.4938,0.3297,0.5391]},{"cls":"Caries","box":[0.3422,0.6656,0.3641,0.7094]}]},{"case":"R1156","aspect":2.38,"findings":[{"cls":"Periapical","box":[0.2891,0.3672,0.3172,0.4047]}]},{"case":"R0801","aspect":2.0215,"findings":[{"cls":"Caries","box":[0.5953,0.6641,0.6125,0.7]}]},{"case":"R1142","aspect":2.3644,"findings":[{"cls":"Caries","box":[0.7,0.4938,0.7141,0.5344]}]},{"case":"R0571","aspect":2.4437,"findings":[]},{"case":"R1013","aspect":2.38,"findings":[{"cls":"Caries","box":[0.3453,0.6828,0.3547,0.7047]},{"cls":"Caries","box":[0.3719,0.5844,0.3953,0.6531]}]},{"case":"R0247","aspect":2.4778,"findings":[{"cls":"Caries","box":[0.5328,0.5844,0.5422,0.6062]},{"cls":"Caries","box":[0.6125,0.5875,0.6406,0.6547]}]},{"case":"R0302","aspect":2.38,"findings":[]},{"case":"R0712","aspect":2.4111,"findings":[]},{"case":"R0951","aspect":2.38,"findings":[{"cls":"Caries","box":[0.6578,0.5781,0.6688,0.6078]},{"cls":"Periapical","box":[0.4078,0.8297,0.4188,0.8516]}]},{"case":"R0946","aspect":2.5133,"findings":[]},{"case":"R0704","aspect":2.4607,"findings":[{"cls":"Caries","box":[0.6484,0.6656,0.6594,0.6906]},{"cls":"Periapical","box":[0.6766,0.7984,0.7016,0.8219]}]},{"case":"R0906","aspect":1.9896,"findings":[{"cls":"Caries","box":[0.6062,0.7875,0.6219,0.8109]}]},{"case":"R0629","aspect":2.4778,"findings":[{"cls":"Periapical","box":[0.325,0.8453,0.3484,0.8672]}]},{"case":"R0950","aspect":2.38,"findings":[{"cls":"Caries","box":[0.6859,0.5984,0.7016,0.6344]},{"cls":"Periapical","box":[0.6047,0.7562,0.6188,0.7922]}]},{"case":"R0351","aspect":2.2963,"findings":[{"cls":"Caries","box":[0.2812,0.5297,0.2969,0.5578]}]},{"case":"R0206","aspect":2.4607,"findings":[]},{"case":"R0291","aspect":2.38,"findings":[]},{"case":"R0240","aspect":2.0052,"findings":[{"cls":"Caries","box":[0.4047,0.6656,0.4234,0.7062]},{"cls":"Periapical","box":[0.6484,0.7594,0.6734,0.775]},{"cls":"Periapical","box":[0.7391,0.8125,0.7547,0.8375]},{"cls":"Periapical","box":[0.3078,0.8234,0.3516,0.8844]}]},{"case":"R0887","aspect":2.4111,"findings":[{"cls":"Periapical","box":[0.6766,0.3781,0.6984,0.4109]}]},{"case":"R1202","aspect":2.3644,"findings":[{"cls":"Caries","box":[0.6203,0.5812,0.6641,0.6438]},{"cls":"Caries","box":[0.6844,0.7,0.7516,0.7391]},{"cls":"Caries","box":[0.6625,0.7062,0.6781,0.7281]},{"cls":"Caries","box":[0.3297,0.7156,0.3578,0.7672]},{"cls":"Caries","box":[0.2766,0.7203,0.3141,0.7484]},{"cls":"Caries","box":[0.2562,0.7281,0.2703,0.7453]}]},{"case":"R0730","aspect":2.4274,"findings":[{"cls":"Caries","box":[0.4266,0.675,0.4344,0.7047]},{"cls":"Caries","box":[0.6391,0.5312,0.6797,0.6203]},{"cls":"Caries","box":[0.3734,0.6906,0.3906,0.7312]},{"cls":"Periapical","box":[0.6406,0.7953,0.6719,0.8625]}]},{"case":"R0762","aspect":2.4607,"findings":[{"cls":"Caries","box":[0.6516,0.575,0.6766,0.6281]},{"cls":"Caries","box":[0.5844,0.5828,0.5984,0.6141]},{"cls":"Caries","box":[0.3375,0.6797,0.3469,0.7016]}]},{"case":"R1048","aspect":2.2985,"findings":[]},{"case":"R0479","aspect":2.2837,"findings":[{"cls":"Periapical","box":[0.4344,0.7094,0.4641,0.7375]}]},{"case":"R1027","aspect":2.38,"findings":[{"cls":"Caries","box":[0.4125,0.6391,0.4281,0.6672]},{"cls":"Caries","box":[0.6453,0.6391,0.6562,0.6656]},{"cls":"Periapical","box":[0.3188,0.4156,0.3469,0.475]}]},{"case":"R0413","aspect":2.4437,"findings":[{"cls":"Caries","box":[0.6453,0.5797,0.6547,0.6047]},{"cls":"Caries","box":[0.3875,0.6781,0.4047,0.7328]},{"cls":"Periapical","box":[0.625,0.4625,0.6469,0.4984]}]},{"case":"R1197","aspect":1.917,"findings":[]},{"case":"R1182","aspect":2.3089,"findings":[{"cls":"Periapical","box":[0.6047,0.8156,0.6531,0.8844]}]},{"case":"R0423","aspect":2.38,"findings":[]},{"case":"R0149","aspect":2.3644,"findings":[{"cls":"Caries","box":[0.65,0.7578,0.675,0.8109]}]},{"case":"R0755","aspect":2.4437,"findings":[{"cls":"Caries","box":[0.45,0.6031,0.4625,0.6406]}]},{"case":"R1132","aspect":2.3644,"findings":[]},{"case":"R0437","aspect":2.3089,"findings":[{"cls":"Caries","box":[0.6125,0.5266,0.6297,0.55]}]},{"case":"R0412","aspect":2.38,"findings":[]},{"case":"R0091","aspect":2.4778,"findings":[]},{"case":"R0948","aspect":2.5133,"findings":[]},{"case":"R0639","aspect":2.4274,"findings":[{"cls":"Caries","box":[0.6656,0.6031,0.6766,0.6266]},{"cls":"Caries","box":[0.3219,0.6172,0.3406,0.6594]},{"cls":"Caries","box":[0.3484,0.6375,0.3688,0.6688]}]},{"case":"R1238","aspect":2.0052,"findings":[{"cls":"Caries","box":[0.3797,0.7734,0.3938,0.7969]}]},{"case":"R0783","aspect":2.4274,"findings":[{"cls":"Caries","box":[0.3094,0.6922,0.3266,0.7297]}]},{"case":"R0954","aspect":2.4437,"findings":[]},{"case":"R0119","aspect":2.38,"findings":[]},{"case":"R0506","aspect":2.3504,"findings":[{"cls":"Caries","box":[0.3328,0.7078,0.3547,0.7406]}]}];
+const TR = {Caries: "Çürük", Periapical: "Periapikal"};
+const KEY = "reader_rating_v1";
+let S = {reader: "", cases: {}};
+try { S = JSON.parse(localStorage.getItem(KEY)) || S; } catch (e) {}
+let i = 0;
+const $ = id => document.getElementById(id);
+const st = c => (S.cases[c] = S.cases[c] || {f: {}, miss: [], done: false});
+// served by reader_server.py: the reader comes from the login and every change is
+// saved on the server (debounced); opened as a local file: browser storage + JSON export
+const SERVER = location.protocol.startsWith("http");
+let timer = null;
+function status(t, bad) { const e = $("srv"); if (e) { e.textContent = t; e.style.color = bad ? "#cf222e" : "#2da44e"; } }
+function push() {
+  fetch(location.origin + "/api/save", {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify(S)})
+    .then(r => { if (!r.ok) throw r.status; status("Sunucuya kaydedildi " + new Date().toLocaleTimeString().slice(0, 5)); })
+    .catch(() => { status("KAYDEDİLEMEDİ – bağlantıyı kontrol edin", true); clearTimeout(timer); timer = setTimeout(push, 5000); });
+}
+const persist = () => {
+  try { localStorage.setItem(KEY, JSON.stringify(S)); } catch (e) {}
+  if (SERVER) { status("Kaydediliyor…"); clearTimeout(timer); timer = setTimeout(push, 800); }
+};
+$("reader").value = S.reader || "";
+$("reader").oninput = e => { S.reader = e.target.value.trim(); persist(); };
+CASES.forEach((c, k) => $("jump").add(new Option(`${k + 1}. ${c.case}`, k)));
+
+function radios(name, vals, labels, cur, on) {
+  return `<span class="opt">` + vals.map((v, k) => `<label><input type="radio" name="${name}" value="${v}" ${cur == v ? "checked" : ""} onchange="${on}">${labels[k]}</label>`).join("") + `</span>`;
+}
+function render() {
+  const c = CASES[i], s = st(c.case), w = $("wrap");
+  w.style.aspectRatio = c.aspect;
+  $("img").src = (typeof IMG !== "undefined" && IMG[c.case]) || "images640/" + c.case + ".png";
+  w.querySelectorAll(".bx").forEach(b => b.remove());
+  const box = (b, txt, cls) => { const d = document.createElement("div"); d.className = "bx " + cls;
+    Object.assign(d.style, {left: b[0] * 100 + "%", top: b[1] * 100 + "%", width: (b[2] - b[0]) * 100 + "%", height: (b[3] - b[1]) * 100 + "%"});
+    d.innerHTML = `<span>${txt}</span>`; w.appendChild(d); };
+  c.findings.forEach((f, k) => box(f.box, k + 1, ""));
+  s.miss.forEach((m, k) => box(m.box, "K" + (k + 1), "miss"));
+  $("rows").innerHTML = c.findings.length ? c.findings.map((f, k) => { const r = s.f[k] || {};
+    return `<tr><td>${k + 1}</td><td>${TR[f.cls]}</td><td>${radios(`v${k}`, ["true", "false", "unsure"], ["Doğru", "Yanlış", "Emin değilim"], r.v, `setF(${k},'v',this.value)`)}</td>
+    <td>${radios(`c${k}`, [1, 2, 3, 4, 5], [1, 2, 3, 4, 5], r.c, `setF(${k},'c',+this.value)`)}</td></tr>`; }).join("")
+    : `<tr><td colspan="4" class="mut">Bu görüntüde yapay zekâ bulgusu yok.</td></tr>`;
+  $("mrows").innerHTML = s.miss.map((m, k) => `<tr><td>K${k + 1}</td><td>${m.cls}</td>
+    <td>${radios(`m${k}`, [1, 2, 3, 4, 5], [1, 2, 3, 4, 5], m.c, `setM(${k},+this.value)`)}</td><td><button onclick="delM(${k})">✕</button></td></tr>`).join("");
+  $("caseDone").checked = s.done;
+  const nd = CASES.filter(x => S.cases[x.case] && S.cases[x.case].done).length;
+  $("pos").innerHTML = `${i + 1} / ${CASES.length} <span class="done">(${nd} tamam)</span>`;
+  $("jump").value = i;
+}
+function setF(k, key, v) { const s = st(CASES[i].case); s.f[k] = s.f[k] || {}; s.f[k][key] = v; persist(); }
+function setM(k, v) { st(CASES[i].case).miss[k].c = v; persist(); }
+function delM(k) { st(CASES[i].case).miss.splice(k, 1); persist(); render(); }
+$("caseDone").onchange = e => {
+  const c = CASES[i], s = st(c.case);
+  const open = c.findings.some((f, k) => !s.f[k] || !s.f[k].v || !s.f[k].c) || s.miss.some(m => !m.c);
+  if (e.target.checked && open) { alert("Önce tüm bulgular ve kaçırılanlar için değerlendirme ve güven seçin."); e.target.checked = false; return; }
+  s.done = e.target.checked; persist(); render(); };
+$("prev").onclick = () => { if (i > 0) { i--; render(); } };
+$("next").onclick = () => { if (i < CASES.length - 1) { i++; render(); } };
+$("jump").onchange = e => { i = +e.target.value; render(); };
+$("br").oninput = e => document.documentElement.style.setProperty("--br", e.target.value);
+$("ct").oninput = e => document.documentElement.style.setProperty("--ct", e.target.value);
+const tog = () => $("wrap").classList.toggle("hidebox");
+$("tog").onclick = tog;
+document.addEventListener("keydown", e => { if (e.target.tagName === "INPUT" && e.target.type !== "radio") return;
+  if (e.key === "h" || e.key === "H") tog(); if (e.key === "ArrowRight") $("next").click(); if (e.key === "ArrowLeft") $("prev").click(); });
+
+let drag = null;
+const rel = e => { const r = $("wrap").getBoundingClientRect(); return [Math.min(Math.max((e.clientX - r.left) / r.width, 0), 1), Math.min(Math.max((e.clientY - r.top) / r.height, 0), 1)]; };
+$("wrap").onpointerdown = e => { if (e.button > 0) return; e.preventDefault(); $("wrap").setPointerCapture(e.pointerId); drag = {a: rel(e), el: document.createElement("div")}; drag.el.className = "bx miss"; $("wrap").appendChild(drag.el); };
+$("wrap").onpointermove = e => { if (!drag) return; const [x, y] = rel(e), [a, b] = drag.a;
+  Object.assign(drag.el.style, {left: Math.min(a, x) * 100 + "%", top: Math.min(b, y) * 100 + "%", width: Math.abs(x - a) * 100 + "%", height: Math.abs(y - b) * 100 + "%"}); };
+$("wrap").onpointerup = $("wrap").onpointercancel = e => { if (!drag) return; const [x, y] = rel(e), [a, b] = drag.a; drag.el.remove();
+  if (Math.abs(x - a) > 0.004 && Math.abs(y - b) > 0.004) {
+    st(CASES[i].case).miss.push({cls: $("mcls").value === "Çürük" ? "Caries" : "Periapical", box: [Math.min(a, x), Math.min(b, y), Math.max(a, x), Math.max(b, y)].map(v => +v.toFixed(4))});
+    persist(); render(); }
+  drag = null; };
+
+$("save").onclick = () => {
+  if (!S.reader) { alert("Lütfen okuyucu kodunu girin."); return; }
+  const blob = new Blob([JSON.stringify({...S, saved: new Date().toISOString(), n_cases: CASES.length}, null, 1)], {type: "application/json"});
+  const name = `rating_${S.reader}.json`;
+  try {  // iPad / tablets: share sheet (save to Files, AirDrop, ...); otherwise a download
+    const file = new File([blob], name, {type: "application/json"});
+    if (navigator.canShare && navigator.canShare({files: [file]})) { navigator.share({files: [file], title: name}).catch(() => {}); return; }
+  } catch (e) {}
+  const a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = name; document.body.appendChild(a); a.click(); a.remove(); };
+$("load").onchange = e => { const f = e.target.files[0]; if (!f) return; f.text().then(t => { S = JSON.parse(t); $("reader").value = S.reader || ""; persist(); render(); }); };
+if (SERVER) {
+  $("reader").disabled = true; $("save").style.display = "none"; $("load").parentNode.style.display = "none";
+  status("Sunucudan yükleniyor…");
+  fetch(location.origin + "/api/load").then(r => { if (!r.ok) throw r.status; return r.json(); }).then(d => {
+    S = d.state && d.state.cases ? d.state : {reader: d.reader, cases: {}};
+    S.reader = d.reader; $("reader").value = d.reader;
+    // continue at the first unfinished patient
+    const k = CASES.findIndex(c => !(S.cases[c.case] && S.cases[c.case].done)); i = k < 0 ? 0 : k;
+    status("Sunucuya bağlı"); render();
+  }).catch(() => { status("Sunucuya bağlanılamadı – sayfayı yenileyin", true); });
+} else render();
+</script></body></html>
