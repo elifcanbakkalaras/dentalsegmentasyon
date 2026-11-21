@@ -5,7 +5,7 @@ work on the server, and gives the investigator a results view. The server
 never holds which model produced a finding (that stays in findings.json on
 the investigator's machine).
 
-Folder layout on the server (the "sunucu_paketi" folder):
+Folder layout on the server (a clone of this repository, e.g. /opt/okuyucu; see README.md):
     reader_server.py  rating.html  admin.html  images640/<case>.png
     users.json      (created by --add-user; salted password hashes)
     data/           (created; rating_<reader>.json + history/)
@@ -28,6 +28,7 @@ import os
 import re
 import secrets
 import ssl
+import threading
 import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
@@ -36,7 +37,9 @@ USERS = os.path.join(ROOT, "users.json")
 DATA = os.path.join(ROOT, "data")
 CASE_RE = re.compile(r"^/images640/(R\d{4})\.png$")
 MAX_BODY = 4 * 1024 * 1024
-FAILS = {}  # ip -> [count, first_time], simple brute-force brake
+FAILS = {}  # ip -> [count, window_start], simple brute-force brake
+MAX_FAILS, BLOCK_S = 10, 600
+SAVE_LOCK = threading.Lock()  # saves are written one at a time (shared .tmp name, history snapshot)
 
 
 def read_users():
@@ -64,10 +67,19 @@ def add_user(name, admin):
 
 class Handler(BaseHTTPRequestHandler):
     server_version = "reader"
+    timeout = 60  # drop connections that never send a request (and, with --cert, never finish TLS)
+
+    def ip(self):
+        """Client address. Behind a reverse proxy on this machine (Caddy/nginx) every connection comes
+        from 127.0.0.1, so take the address the proxy appended to X-Forwarded-For (the last entry)."""
+        ip = self.client_address[0]
+        if ip in ("127.0.0.1", "::1", "::ffff:127.0.0.1"):
+            fwd = self.headers.get("X-Forwarded-For", "") if getattr(self, "headers", None) else ""
+            ip = fwd.split(",")[-1].strip() or ip
+        return ip
 
     def log_message(self, fmt, *args):  # no request bodies or images in the log
-        print(time.strftime("%Y-%m-%d %H:%M:%S"), self.client_address[0], getattr(self, "user", "-"), fmt % args,
-              flush=True)
+        print(time.strftime("%Y-%m-%d %H:%M:%S"), self.ip(), getattr(self, "user", "-"), fmt % args, flush=True)
 
     def send(self, code, body=b"", ctype="text/plain; charset=utf-8", extra=None):
         self.send_response(code)
@@ -84,9 +96,11 @@ class Handler(BaseHTTPRequestHandler):
             self.wfile.write(body)
 
     def auth(self):
-        ip = self.client_address[0]
-        n, t0 = FAILS.get(ip, [0, time.time()])
-        if n >= 10 and time.time() - t0 < 600:
+        ip, now = self.ip(), time.time()
+        n, t0 = FAILS.get(ip, (0, now))
+        if now - t0 >= BLOCK_S:  # window (or block) is over: count afresh
+            n, t0 = 0, now
+        if n >= MAX_FAILS:
             self.send(429, "Çok fazla hatalı giriş; 10 dakika sonra deneyin.".encode())
             return None
         h = self.headers.get("Authorization", "")
@@ -100,7 +114,8 @@ class Handler(BaseHTTPRequestHandler):
                     return name, u
             except Exception:
                 pass
-            FAILS[ip] = [n + 1, t0 if n else time.time()]
+            n += 1
+            FAILS[ip] = [n, now if n >= MAX_FAILS else t0]  # the 10th miss starts a full 10-minute block
         self.send(401, "Giriş gerekli".encode(), extra={"WWW-Authenticate": 'Basic realm="Okuyucu", charset="UTF-8"'})
         return None
 
@@ -163,17 +178,19 @@ class Handler(BaseHTTPRequestHandler):
             return self.send(400, b"bad json")
         state["reader"] = name  # the login decides who rated, never the page
         state["saved"] = time.strftime("%Y-%m-%dT%H:%M:%S")
-        os.makedirs(os.path.join(DATA, "history"), exist_ok=True)
         body = json.dumps(state, ensure_ascii=False, indent=1).encode("utf-8")
         p = os.path.join(DATA, f"rating_{name}.json")
-        tmp = p + ".tmp"
-        with open(tmp, "wb") as fh:
-            fh.write(body)
-        os.replace(tmp, p)  # atomic
-        # one snapshot per reader per 10 minutes, so earlier work can always be recovered
-        snap = os.path.join(DATA, "history", f"rating_{name}_{time.strftime('%Y%m%d_%H')}{int(time.strftime('%M')) // 10}0.json")
-        with open(snap, "wb") as fh:
-            fh.write(body)
+        with SAVE_LOCK:
+            os.makedirs(os.path.join(DATA, "history"), exist_ok=True)
+            tmp = p + ".tmp"
+            with open(tmp, "wb") as fh:
+                fh.write(body)
+            os.replace(tmp, p)  # atomic
+            # one snapshot per reader per 10 minutes, so earlier work can always be recovered
+            snap = os.path.join(DATA, "history",
+                                f"rating_{name}_{time.strftime('%Y%m%d_%H')}{int(time.strftime('%M')) // 10}0.json")
+            with open(snap, "wb") as fh:
+                fh.write(body)
         self.send(200, b'{"ok":true}', "application/json")
 
 
@@ -194,7 +211,9 @@ def main():
     if args.cert:
         ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
         ctx.load_cert_chain(args.cert, args.key)
-        httpd.socket = ctx.wrap_socket(httpd.socket, server_side=True)
+        # handshake in the request thread (with Handler.timeout), not in accept(): otherwise one idle
+        # connection, e.g. from a port scanner, would stall the whole server
+        httpd.socket = ctx.wrap_socket(httpd.socket, server_side=True, do_handshake_on_connect=False)
     elif args.host not in ("127.0.0.1", "localhost"):
         print("WARNING: no HTTPS. Use --cert/--key or a reverse proxy; passwords travel with every request.")
     print(f"serving {ROOT} on {'https' if args.cert else 'http'}://{args.host}:{args.port}/  (readers: /, admin: /admin)",

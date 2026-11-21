@@ -50,12 +50,19 @@ const st = c => (S.cases[c] = S.cases[c] || {f: {}, miss: [], done: false});
 // served by reader_server.py: the reader comes from the login and every change is
 // saved on the server (debounced); opened as a local file: browser storage + JSON export
 const SERVER = location.protocol.startsWith("http");
-let timer = null;
+let timer = null, busy = false, again = false;
 function status(t, bad) { const e = $("srv"); if (e) { e.textContent = t; e.style.color = bad ? "#cf222e" : "#2da44e"; } }
+// one save in flight at a time, so an older state can never land on the server after a newer one;
+// keepalive lets a save finish even when the tab is closed right after the last click
 function push() {
-  fetch(location.origin + "/api/save", {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify(S)})
-    .then(r => { if (!r.ok) throw r.status; status("Sunucuya kaydedildi " + new Date().toLocaleTimeString().slice(0, 5)); })
-    .catch(() => { status("KAYDEDİLEMEDİ – bağlantıyı kontrol edin", true); clearTimeout(timer); timer = setTimeout(push, 5000); });
+  clearTimeout(timer); timer = null;
+  if (busy) { again = true; return; }
+  busy = true; again = false;
+  const body = JSON.stringify(S);
+  fetch(location.origin + "/api/save", {method: "POST", headers: {"Content-Type": "application/json"}, body, keepalive: body.length < 60000})
+    .then(r => { if (!r.ok) throw r.status; busy = false;
+      if (again) push(); else status("Sunucuya kaydedildi " + new Date().toLocaleTimeString().slice(0, 5)); })
+    .catch(() => { busy = false; status("KAYDEDİLEMEDİ – bağlantıyı kontrol edin", true); clearTimeout(timer); timer = setTimeout(push, 5000); });
 }
 const persist = () => {
   try { localStorage.setItem(KEY, JSON.stringify(S)); } catch (e) {}
@@ -82,7 +89,7 @@ function render() {
     return `<tr><td>${k + 1}</td><td>${TR[f.cls]}</td><td>${radios(`v${k}`, ["true", "false", "unsure"], ["Doğru", "Yanlış", "Emin değilim"], r.v, `setF(${k},'v',this.value)`)}</td>
     <td>${radios(`c${k}`, [1, 2, 3, 4, 5], [1, 2, 3, 4, 5], r.c, `setF(${k},'c',+this.value)`)}</td></tr>`; }).join("")
     : `<tr><td colspan="4" class="mut">Bu görüntüde yapay zekâ bulgusu yok.</td></tr>`;
-  $("mrows").innerHTML = s.miss.map((m, k) => `<tr><td>K${k + 1}</td><td>${m.cls}</td>
+  $("mrows").innerHTML = s.miss.map((m, k) => `<tr><td>K${k + 1}</td><td>${TR[m.cls]}</td>
     <td>${radios(`m${k}`, [1, 2, 3, 4, 5], [1, 2, 3, 4, 5], m.c, `setM(${k},+this.value)`)}</td><td><button onclick="delM(${k})">✕</button></td></tr>`).join("");
   $("caseDone").checked = s.done;
   const nd = CASES.filter(x => S.cases[x.case] && S.cases[x.case].done).length;
@@ -129,6 +136,9 @@ $("save").onclick = () => {
   const a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = name; document.body.appendChild(a); a.click(); a.remove(); };
 $("load").onchange = e => { const f = e.target.files[0]; if (!f) return; f.text().then(t => { S = JSON.parse(t); $("reader").value = S.reader || ""; persist(); render(); }); };
 if (SERVER) {
+  // iPad: switching app / locking hides the page -> send a pending save now; desktop: warn before closing unsaved
+  document.addEventListener("visibilitychange", () => { if (document.visibilityState === "hidden" && timer) push(); });
+  window.addEventListener("beforeunload", e => { if (timer || busy) { e.preventDefault(); e.returnValue = ""; } });
   $("reader").disabled = true; $("save").style.display = "none"; $("load").parentNode.style.display = "none";
   status("Sunucudan yükleniyor…");
   fetch(location.origin + "/api/load").then(r => { if (!r.ok) throw r.status; return r.json(); }).then(d => {
